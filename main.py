@@ -49,7 +49,7 @@ class Attendance(db.Model):
     working_hours = db.Column(db.Float, nullable=True, default=0.0)
     late_minutes = db.Column(db.Integer, default=0)       
     overtime_hours = db.Column(db.Float, default=0.0)     
-    status = db.Column(db.String(20), nullable=False, default='Present') # Present, Half-Day, Short Hours
+    status = db.Column(db.String(20), nullable=False, default='Present')
 
 # 3. Leave Model
 class Leave(db.Model):
@@ -218,30 +218,18 @@ def punch_in():
     today_date = ist_now.strftime('%Y-%m-%d')
     current_time_str = ist_now.strftime('%H:%M:%S')
     
-    # 1. Holiday Check
     is_holiday = Holiday.query.filter_by(date=today_date).first()
     if is_holiday:
         return f"Today is a Public Holiday ({is_holiday.name})! Attendance not required. <a href='/employee_dashboard'>Go Back</a>"
     
-    # 2. Anti-Passback Check
     existing = Attendance.query.filter_by(employee_id=emp_id, date=today_date).first()
     if existing:
         return "Error: You have already punched in today! Double punch is not allowed. <a href='/employee_dashboard'>Go Back</a>"
         
-    # --- AUTOMATIC / ROTATIONAL SHIFT TIME DETECTION LOGIC ---
-    # Jevelha employee punch karel, tyachya punch-in time nusar shift decide hoil 
-    # (Kiva jar employee ne profile madhe shift dili asel tichya adharavar standard time tharel)
-    
     t_in = datetime.strptime(current_time_str, '%H:%M:%S').time()
-    
-    # Check shift timings range based on Employee's assigned rotation or punch time
-    # Shift 1: e.g. Morning (e.g. 6:00 AM to 1:00 PM punch) -> Standard start 09:00:00
-    # Shift 2: e.g. Afternoon (1:00 PM to 8:00 PM punch) -> Standard start 14:00:00
-    # Shift 3: e.g. Night (8:00 PM onwards) -> Standard start 22:00:00
     
     if "Shift 3" in employee.shift or "3" in employee.shift or (time(19, 0) <= t_in or t_in <= time(4, 0)):
         shift_start_time = "22:00:00"
-        # Auto update employee shift if rotation changes dynamically
         employee.shift = "Shift 3 (10 PM)"
     elif "Shift 2" in employee.shift or "2" in employee.shift or (time(12, 0) <= t_in < time(19, 0)):
         shift_start_time = "14:00:00"
@@ -250,7 +238,7 @@ def punch_in():
         shift_start_time = "09:00:00"
         employee.shift = "Shift 1 (9 AM)"
         
-    db.session.commit() # Save updated shift automatically if changed by rotation time
+    db.session.commit()
         
     fmt = '%H:%M:%S'
     t_in_dt = datetime.strptime(current_time_str, fmt)
@@ -273,7 +261,7 @@ def punch_in():
         
     return redirect(url_for('employee_dashboard'))
 
-# Punch Out Route (Using IST + Fixed Minimum Working Hours Logic)
+# Punch Out Route
 @app.route('/punch_out', methods=['POST'])
 def punch_out():
     if 'user_id' not in session or session.get('role') != 'Employee':
@@ -293,13 +281,11 @@ def punch_out():
         hours = round((t2 - t1).total_seconds() / 3600, 2)
         attendance.working_hours = hours
         
-        # Overtime calculation
         if hours > 8.0:
             attendance.overtime_hours = round(hours - 8.0, 2)
         else:
             attendance.overtime_hours = 0.0
             
-        # HALF-DAY & SHORT HOURS LOGIC:
         if hours < 1.0:
             attendance.status = 'Short Hours'
         elif 1.0 <= hours < 4.5:
@@ -366,7 +352,7 @@ def update_leave(leave_id, status):
         
     return redirect(url_for('manage_leaves'))
 
-# Enhanced Helper Function for Salary Calculation
+# Salary Calculation Helper
 def calculate_salary_data():
     employees = Employee.query.all()
     report_data = []
