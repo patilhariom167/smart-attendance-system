@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Salary & Attendance Report Print</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        @media print {
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body class="bg-light p-4">
+    <div class="container">
+        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+            <a href="/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+            <button onclick="window.print()" class="btn btn-primary">🖨️ Print / Save as PDF</button>
+        </div>
+
+        <div class="card shadow p-4 rounded-4 bg-white">
+            <h2 class="text-center mb-3">Company Salary & Attendance Report</h2>
+            <p class="text-center text-muted">Generated Date: {{ datetime.now().strftime('%d-%m-%Y') if datetime else '' }}</p>
+            
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Name</th>
+                            <th>Branch</th>
+                            <th>Shift</th>
+                            <th>Basic (₹)</th>
+                            <th>Full Days</th>
+                            <th>Half Days</th>
+                            <th>OT (Hrs)</th>
+                            <th>OT Pay (₹)</th>
+                            <th>Bonus</th>
+                            <th>Advance</th>
+                            <th>Net Salary (₹)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in report_data %}
+                        <tr>
+                            <td><b>{{ item.employee.name }}</b></td>
+                            <td>{{ item.employee.branch }}</td>
+                            <td>{{ item.employee.shift }}</td>
+                            <td>₹{{ item.employee.basic_salary }}</td>
+                            <td>{{ item.present_days }}</td>
+                            <td>{{ item.half_days }}</td>
+                            <td>{{ item.total_overtime_hours }} hrs</td>
+                            <td>₹{{ item.overtime_pay }}</td>
+                            <td>₹{{ item.bonus }}</td>
+                            <td>₹{{ item.advance_salary }}</td>
+                            <td><b>₹{{ item.net_salary }}</b></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

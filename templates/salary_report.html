@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Salary & Attendance Report - Admin Dashboard</title>
+    <!-- Bootstrap CSS CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark px-4 shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold" href="/dashboard">Admin Dashboard</a>
+            <div class="d-flex align-items-center">
+                <a href="/dashboard" class="btn btn-outline-light btn-sm me-3">← Back to Dashboard</a>
+                <span class="text-white me-3">Welcome, <b>{{ session['user_name'] }}</b></span>
+                <a href="/logout" class="btn btn-danger btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Container -->
+    <div class="container mt-4">
+        <div class="card shadow-sm border-0 p-4 rounded-4">
+            <!-- Header with Title & Download Excel Button -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="text-secondary m-0">Advanced Salary & Attendance Report</h3>
+                <a href="/download_excel" class="btn btn-success fw-bold shadow-sm">📥 Download Excel Report</a>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle">
+                    <thead class="table-primary">
+                        <tr>
+                            <th>Employee Name</th>
+                            <th>Branch & Shift</th>
+                            <th>Basic Salary (₹)</th>
+                            <th>Full / Half Days</th>
+                            <th>Bonus (₹)</th>
+                            <th>Advance Ded. (₹)</th>
+                            <th>Net Payable Salary (₹)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in report_data %}
+                        <tr>
+                            <td>
+                                <b>{{ item.employee.name }}</b><br>
+                                <small class="text-muted">{{ item.employee.email }}</small>
+                            </td>
+                            <td>
+                                <b>{{ item.employee.branch }}</b><br>
+                                <small class="text-muted">{{ item.employee.shift }}</small>
+                            </td>
+                            <td>₹ {{ item.employee.basic_salary }}</td>
+                            <td>
+                                <span class="badge bg-success" title="Full Days">{{ item.present_days }} Full</span>
+                                <span class="badge bg-warning text-dark" title="Half Days">{{ item.half_days }} Half</span>
+                                <br><small class="text-muted">Eff: {{ item.effective_days }} Days</small>
+                            </td>
+                            <td><span class="text-success fw-bold">+₹ {{ item.bonus }}</span></td>
+                            <td><span class="text-danger fw-bold">-₹ {{ item.advance_salary }}</span></td>
+                            <td><span class="text-success fw-bold fs-5">₹ {{ item.net_salary }}</span></td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">No employee records found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
