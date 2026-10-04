@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, send_file
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import pytz
 import pandas as pd
 import io
 
@@ -10,7 +11,14 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///attendance.db'
 
 db = SQLAlchemy(app)
 
-# 1. Employee Model (Updated with Shift 1/2/3, Branch, Advance & Bonus)
+# IST Timezone Definition
+IST = pytz.timezone('Asia/Kolkata')
+
+def get_current_ist_time():
+    """Returns current date and time in Indian Standard Time (IST)"""
+    return datetime.now(IST)
+
+# 1. Employee Model
 class Employee(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -24,7 +32,7 @@ class Employee(db.Model):
     advance_salary = db.Column(db.Float, nullable=False, default=0.0)
     bonus = db.Column(db.Float, nullable=False, default=0.0)
 
-# 2. Attendance Model (Updated for Late Minutes, Overtime & Status tracking)
+# 2. Attendance Model
 class Attendance(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
@@ -32,9 +40,9 @@ class Attendance(db.Model):
     in_time = db.Column(db.String(20), nullable=True)
     out_time = db.Column(db.String(20), nullable=True)
     working_hours = db.Column(db.Float, nullable=True, default=0.0)
-    late_minutes = db.Column(db.Integer, default=0)       # Kiti minute ushi ala
-    overtime_hours = db.Column(db.Float, default=0.0)     # Kiti extra taas kam kele
-    status = db.Column(db.String(20), nullable=False, default='Present') # Present, Half-Day
+    late_minutes = db.Column(db.Integer, default=0)       
+    overtime_hours = db.Column(db.Float, default=0.0)     
+    status = db.Column(db.String(20), nullable=False, default='Present') # Present, Half-Day, Short Hours
 
 # 3. Leave Model
 class Leave(db.Model):
@@ -45,7 +53,7 @@ class Leave(db.Model):
     reason = db.Column(db.String(250), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='Pending')
 
-# 4. Holiday Model (New Feature for Public Holidays)
+# 4. Holiday Model
 class Holiday(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.String(20), unique=True, nullable=False)
@@ -82,7 +90,7 @@ def dashboard():
     all_employees = Employee.query.all()
     return render_template('dashboard.html', employees=all_employees)
 
-# Add Employee Route (Supports Shift 1/2/3 & Branch)
+# Add Employee Route
 @app.route('/add_employee', methods=['GET', 'POST'])
 def add_employee():
     if 'user_id' not in session or session.get('role') != 'Admin':
@@ -180,14 +188,18 @@ def employee_dashboard():
         
     emp_id = session['user_id']
     employee = Employee.query.get(emp_id)
-    today_date = datetime.now().strftime('%Y-%m-%d')
+    
+    # Using IST for today's date
+    ist_now = get_current_ist_time()
+    today_date = ist_now.strftime('%Y-%m-%d')
+    
     today_attendance = Attendance.query.filter_by(employee_id=emp_id, date=today_date).first()
     emp_leaves = Leave.query.filter_by(employee_id=emp_id).all()
     history = Attendance.query.filter_by(employee_id=emp_id).order_by(Attendance.date.desc()).all()
     
     return render_template('employee_dashboard.html', employee=employee, attendance=today_attendance, leaves=emp_leaves, history=history)
 
-# Punch In Route (With Holiday Check, Anti-Passback & Shift-based Late calculation)
+# Punch In Route (Using IST)
 @app.route('/punch_in', methods=['POST'])
 def punch_in():
     if 'user_id' not in session or session.get('role') != 'Employee':
@@ -195,15 +207,17 @@ def punch_in():
         
     emp_id = session['user_id']
     employee = Employee.query.get(emp_id)
-    today_date = datetime.now().strftime('%Y-%m-%d')
-    current_time_str = datetime.now().strftime('%H:%M:%S')
+    
+    ist_now = get_current_ist_time()
+    today_date = ist_now.strftime('%Y-%m-%d')
+    current_time_str = ist_now.strftime('%H:%M:%S')
     
     # 1. Holiday Check
     is_holiday = Holiday.query.filter_by(date=today_date).first()
     if is_holiday:
         return f"Today is a Public Holiday ({is_holiday.name})! Attendance not required. <a href='/employee_dashboard'>Go Back</a>"
     
-    # 2. Anti-Passback / Double Punch Prevention Check
+    # 2. Anti-Passback Check
     existing = Attendance.query.filter_by(employee_id=emp_id, date=today_date).first()
     if existing:
         return "Error: You have already punched in today! Double punch is not allowed. <a href='/employee_dashboard'>Go Back</a>"
@@ -236,15 +250,16 @@ def punch_in():
         
     return redirect(url_for('employee_dashboard'))
 
-# Punch Out Route (With Overtime & Half-Day Calculation)
+# Punch Out Route (Using IST + Fixed Minimum Working Hours Logic)
 @app.route('/punch_out', methods=['POST'])
 def punch_out():
     if 'user_id' not in session or session.get('role') != 'Employee':
         return redirect(url_for('login'))
         
     emp_id = session['user_id']
-    today_date = datetime.now().strftime('%Y-%m-%d')
-    current_time_str = datetime.now().strftime('%H:%M:%S')
+    ist_now = get_current_ist_time()
+    today_date = ist_now.strftime('%Y-%m-%d')
+    current_time_str = ist_now.strftime('%H:%M:%S')
     
     attendance = Attendance.query.filter_by(employee_id=emp_id, date=today_date).first()
     if attendance and not attendance.out_time:
@@ -255,12 +270,17 @@ def punch_out():
         hours = round((t2 - t1).total_seconds() / 3600, 2)
         attendance.working_hours = hours
         
+        # Overtime calculation
         if hours > 8.0:
             attendance.overtime_hours = round(hours - 8.0, 2)
         else:
             attendance.overtime_hours = 0.0
             
-        if hours < 4.5:
+        # FIXED HALF-DAY & SHORT HOURS LOGIC:
+        # Jar working hours 1 taas peksha kami astil (उदा. 5 mins), tar tyala half-day n deta 'Short Hours / Absent' treat karel.
+        if hours < 1.0:
+            attendance.status = 'Short Hours'
+        elif 1.0 <= hours < 4.5:
             attendance.status = 'Half-Day'
         else:
             attendance.status = 'Present'
@@ -324,7 +344,7 @@ def update_leave(leave_id, status):
         
     return redirect(url_for('manage_leaves'))
 
-# Enhanced Helper Function for Salary Calculation
+# Enhanced Helper Function for Salary Calculation (Short Hours count as 0 effective days)
 def calculate_salary_data():
     employees = Employee.query.all()
     report_data = []
