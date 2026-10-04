@@ -4,7 +4,7 @@ from datetime import datetime, time
 import pytz
 import pandas as pd
 import io
-os = __import__('os')
+import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key_here'
@@ -17,12 +17,6 @@ if db_url and db_url.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///attendance.db'
 
 db = SQLAlchemy(app)
-
-# Database Tables & Default Admin Creation (Render Gunicorn Compatible)
-with app.app_context():
-    db.create_all()
-    admin_exists = Employee.query.filter_by(email='admin@gmail.com').first() if 'Employee' in globals() else None
-    # (Note: Employee model will be initialized below, so we handle table creation securely)
 
 # IST Timezone Definition
 IST = pytz.timezone('Asia/Kolkata')
@@ -72,7 +66,7 @@ class Holiday(db.Model):
     date = db.Column(db.String(20), unique=True, nullable=False)
     name = db.Column(db.String(100), nullable=False)
 
-# Ensure tables and default admin exist when app starts on Render/Gunicorn
+# Database Tables & Default Admin Creation (Render Gunicorn Compatible - Safe App Context)
 with app.app_context():
     db.create_all()
     admin_exists = Employee.query.filter_by(email='admin@gmail.com').first()
@@ -189,10 +183,11 @@ def manage_holidays():
         date = request.form.get('date')
         name = request.form.get('name')
         
-        existing = Holiday.query.filter_by(date=date).first()
-        if not existing:
-            db.session.add(Holiday(date=date, name=name))
-            db.session.commit()
+        if date and name:
+            existing = Holiday.query.filter_by(date=date).first()
+            if not existing:
+                db.session.add(Holiday(date=date, name=name))
+                db.session.commit()
         return redirect(url_for('manage_holidays'))
         
     holidays = Holiday.query.order_by(Holiday.date.asc()).all()
