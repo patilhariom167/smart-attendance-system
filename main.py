@@ -4,7 +4,7 @@ from datetime import datetime, time
 import pytz
 import pandas as pd
 import io
-import os
+os = __import__('os')
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key_here'
@@ -17,6 +17,12 @@ if db_url and db_url.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///attendance.db'
 
 db = SQLAlchemy(app)
+
+# Database Tables & Default Admin Creation (Render Gunicorn Compatible)
+with app.app_context():
+    db.create_all()
+    admin_exists = Employee.query.filter_by(email='admin@gmail.com').first() if 'Employee' in globals() else None
+    # (Note: Employee model will be initialized below, so we handle table creation securely)
 
 # IST Timezone Definition
 IST = pytz.timezone('Asia/Kolkata')
@@ -65,6 +71,23 @@ class Holiday(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.String(20), unique=True, nullable=False)
     name = db.Column(db.String(100), nullable=False)
+
+# Ensure tables and default admin exist when app starts on Render/Gunicorn
+with app.app_context():
+    db.create_all()
+    admin_exists = Employee.query.filter_by(email='admin@gmail.com').first()
+    if not admin_exists:
+        default_admin = Employee(
+            name='Admin User',
+            email='admin@gmail.com',
+            password='123',
+            role='Admin',
+            basic_salary=25000.0,
+            shift='Shift 1 (9 AM)',
+            branch='Head Office'
+        )
+        db.session.add(default_admin)
+        db.session.commit()
 
 # Login Route
 @app.route('/', methods=['GET', 'POST'])
@@ -448,20 +471,4 @@ def logout():
     return redirect(url_for('login'))
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        admin_exists = Employee.query.filter_by(email='admin@gmail.com').first()
-        if not admin_exists:
-            default_admin = Employee(
-                name='Admin User',
-                email='admin@gmail.com',
-                password='123',
-                role='Admin',
-                basic_salary=25000.0,
-                shift='Shift 1 (9 AM)',
-                branch='Head Office'
-            )
-            db.session.add(default_admin)
-            db.session.commit()
-            
     app.run(debug=True)
