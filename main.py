@@ -1,13 +1,20 @@
 from flask import Flask, render_template, request, redirect, url_for, session, send_file
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, time
 import pytz
 import pandas as pd
 import io
+import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key_here'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///attendance.db'
+
+# PostgreSQL & SQLite Compatibility Configuration
+db_url = os.environ.get('DATABASE_URL')
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///attendance.db'
 
 db = SQLAlchemy(app)
 
@@ -189,7 +196,6 @@ def employee_dashboard():
     emp_id = session['user_id']
     employee = Employee.query.get(emp_id)
     
-    # Using IST for today's date
     ist_now = get_current_ist_time()
     today_date = ist_now.strftime('%Y-%m-%d')
     
@@ -199,7 +205,7 @@ def employee_dashboard():
     
     return render_template('employee_dashboard.html', employee=employee, attendance=today_attendance, leaves=emp_leaves, history=history)
 
-# Punch In Route (Using IST)
+# Punch In Route with Automatic Shift Timing Detection
 @app.route('/punch_in', methods=['POST'])
 def punch_in():
     if 'user_id' not in session or session.get('role') != 'Employee':
@@ -222,20 +228,37 @@ def punch_in():
     if existing:
         return "Error: You have already punched in today! Double punch is not allowed. <a href='/employee_dashboard'>Go Back</a>"
         
-    # Shift timing selection
-    shift_start_time = "09:00:00"
-    if "Shift 2" in employee.shift or "2" in employee.shift:
-        shift_start_time = "14:00:00"
-    elif "Shift 3" in employee.shift or "3" in employee.shift:
+    # --- AUTOMATIC / ROTATIONAL SHIFT TIME DETECTION LOGIC ---
+    # Jevelha employee punch karel, tyachya punch-in time nusar shift decide hoil 
+    # (Kiva jar employee ne profile madhe shift dili asel tichya adharavar standard time tharel)
+    
+    t_in = datetime.strptime(current_time_str, '%H:%M:%S').time()
+    
+    # Check shift timings range based on Employee's assigned rotation or punch time
+    # Shift 1: e.g. Morning (e.g. 6:00 AM to 1:00 PM punch) -> Standard start 09:00:00
+    # Shift 2: e.g. Afternoon (1:00 PM to 8:00 PM punch) -> Standard start 14:00:00
+    # Shift 3: e.g. Night (8:00 PM onwards) -> Standard start 22:00:00
+    
+    if "Shift 3" in employee.shift or "3" in employee.shift or (time(19, 0) <= t_in or t_in <= time(4, 0)):
         shift_start_time = "22:00:00"
+        # Auto update employee shift if rotation changes dynamically
+        employee.shift = "Shift 3 (10 PM)"
+    elif "Shift 2" in employee.shift or "2" in employee.shift or (time(12, 0) <= t_in < time(19, 0)):
+        shift_start_time = "14:00:00"
+        employee.shift = "Shift 2 (2 PM)"
+    else:
+        shift_start_time = "09:00:00"
+        employee.shift = "Shift 1 (9 AM)"
+        
+    db.session.commit() # Save updated shift automatically if changed by rotation time
         
     fmt = '%H:%M:%S'
-    t_in = datetime.strptime(current_time_str, fmt)
+    t_in_dt = datetime.strptime(current_time_str, fmt)
     t_standard = datetime.strptime(shift_start_time, fmt)
     
     late_mins = 0
-    if t_in > t_standard:
-        diff = t_in - t_standard
+    if t_in_dt > t_standard:
+        diff = t_in_dt - t_standard
         late_mins = int(diff.total_seconds() / 60)
         
     new_attendance = Attendance(
@@ -276,8 +299,7 @@ def punch_out():
         else:
             attendance.overtime_hours = 0.0
             
-        # FIXED HALF-DAY & SHORT HOURS LOGIC:
-        # Jar working hours 1 taas peksha kami astil (उदा. 5 mins), tar tyala half-day n deta 'Short Hours / Absent' treat karel.
+        # HALF-DAY & SHORT HOURS LOGIC:
         if hours < 1.0:
             attendance.status = 'Short Hours'
         elif 1.0 <= hours < 4.5:
@@ -344,7 +366,7 @@ def update_leave(leave_id, status):
         
     return redirect(url_for('manage_leaves'))
 
-# Enhanced Helper Function for Salary Calculation (Short Hours count as 0 effective days)
+# Enhanced Helper Function for Salary Calculation
 def calculate_salary_data():
     employees = Employee.query.all()
     report_data = []
