@@ -1,7 +1,5 @@
 Flask
 Flask-SQLAlchemy
-pandas
-openpyxl
 gunicorn
 pytz
 psycopg2-binary
