@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, send_file, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, time
 import pytz
@@ -226,7 +226,7 @@ def employee_dashboard():
     
     return render_template('employee_dashboard.html', employee=employee, attendance=today_attendance, leaves=emp_leaves, history=history)
 
-# Punch In Route
+# Punch In Route (Web Dashboard)
 @app.route('/punch_in', methods=['POST'])
 def punch_in():
     if 'user_id' not in session or session.get('role') != 'Employee':
@@ -282,7 +282,7 @@ def punch_in():
         
     return redirect(url_for('employee_dashboard'))
 
-# Punch Out Route
+# Punch Out Route (Web Dashboard)
 @app.route('/punch_out', methods=['POST'])
 def punch_out():
     if 'user_id' not in session or session.get('role') != 'Employee':
@@ -317,6 +317,106 @@ def punch_out():
         db.session.commit()
         
     return redirect(url_for('employee_dashboard'))
+
+# ==========================================
+# HARDWARE / BRIDGE API ROUTE (Arduino Integration)
+# ==========================================
+@app.route('/api/mark-attendance', methods=['POST'])
+def api_mark_attendance():
+    data = request.get_json()
+    if not data or 'rfid_uid' not in data:
+        return jsonify({"status": "error", "message": "Invalid data provided!"}), 400
+        
+    fingerprint_id = data.get('rfid_uid')
+    
+    try:
+        fingerprint_id_int = int(fingerprint_id)
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid ID format!"}), 400
+        
+    employee = Employee.query.filter_by(fingerprint_id=fingerprint_id_int).first()
+    if not employee:
+        return jsonify({"status": "error", "message": f"Employee with ID {fingerprint_id} not found!"}), 404
+        
+    ist_now = get_current_ist_time()
+    today_date = ist_now.strftime('%Y-%m-%d')
+    current_time_str = ist_now.strftime('%H:%M:%S')
+    
+    is_holiday = Holiday.query.filter_by(date=today_date).first()
+    if is_holiday:
+        return jsonify({"status": "error", "message": f"Today is a Public Holiday ({is_holiday.name})!"}), 400
+        
+    attendance = Attendance.query.filter_by(employee_id=employee.id, date=today_date).first()
+    
+    if not attendance:
+        # --- AUTOMATIC PUNCH IN ---
+        t_in = datetime.strptime(current_time_str, '%H:%M:%S').time()
+        
+        if "Shift 3" in employee.shift or "3" in employee.shift or (time(19, 0) <= t_in or t_in <= time(4, 0)):
+            shift_start_time = "22:00:00"
+        elif "Shift 2" in employee.shift or "2" in employee.shift or (time(12, 0) <= t_in < time(19, 0)):
+            shift_start_time = "14:00:00"
+        else:
+            shift_start_time = "09:00:00"
+            
+        fmt = '%H:%M:%S'
+        t_in_dt = datetime.strptime(current_time_str, fmt)
+        t_standard = datetime.strptime(shift_start_time, fmt)
+        
+        late_mins = 0
+        if t_in_dt > t_standard:
+            diff = t_in_dt - t_standard
+            late_mins = int(diff.total_seconds() / 60)
+            
+        new_attendance = Attendance(
+            employee_id=employee.id,
+            date=today_date,
+            in_time=current_time_str,
+            late_minutes=late_mins,
+            status='Present'
+        )
+        db.session.add(new_attendance)
+        db.session.commit()
+        
+        return jsonify({
+            "status": "success", 
+            "action": "punch_in",
+            "message": f"Punch-In recorded for {employee.name} at {current_time_str}"
+        }), 200
+        
+    elif attendance and not attendance.out_time:
+        # --- AUTOMATIC PUNCH OUT ---
+        attendance.out_time = current_time_str
+        fmt = '%H:%M:%S'
+        t1 = datetime.strptime(attendance.in_time, fmt)
+        t2 = datetime.strptime(current_time_str, fmt)
+        hours = round((t2 - t1).total_seconds() / 3600, 2)
+        attendance.working_hours = hours
+        
+        if hours > 8.0:
+            attendance.overtime_hours = round(hours - 8.0, 2)
+        else:
+            attendance.overtime_hours = 0.0
+            
+        if hours < 1.0:
+            attendance.status = 'Short Hours'
+        elif 1.0 <= hours < 4.5:
+            attendance.status = 'Half-Day'
+        else:
+            attendance.status = 'Present'
+            
+        db.session.commit()
+        
+        return jsonify({
+            "status": "success", 
+            "action": "punch_out",
+            "message": f"Punch-Out recorded for {employee.name}. Working hours: {hours} hrs"
+        }), 200
+    else:
+        return jsonify({
+            "status": "info", 
+            "message": f"Attendance for {employee.name} is already completed for today!"
+        }), 200
 
 # Live Attendance Logs Route (Admin)
 @app.route('/attendance_logs')
