@@ -27,6 +27,8 @@
                                 <th>Employee Name</th>
                                 <th>Date</th>
                                 <th>Check-In Time</th>
+                                <th>Check-Out Time</th>
+                                <th>Working Hours</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
@@ -35,11 +37,13 @@
                                 {% for log in logs %}
                                 <tr>
                                     <td>{{ log.id }}</td>
-                                    <!-- log.employee.name mule employee che nav barobar disel -->
                                     <td>{{ log.employee.name if log.employee else 'Unknown' }}</td>
                                     <td>{{ log.date }}</td>
-                                    <!-- log.in_time mule exact punch-in time disel -->
                                     <td>{{ log.in_time }}</td>
+                                    <!-- नवीन Check-Out Time कॉलम -->
+                                    <td>{{ log.out_time if log.out_time else 'Not Yet' }}</td>
+                                    <!-- नवीन Working Hours कॉलम -->
+                                    <td>{{ log.working_hours }} hrs</td>
                                     <td>
                                         <span class="badge bg-success">{{ log.status }}</span>
                                     </td>
@@ -47,7 +51,7 @@
                                 {% endfor %}
                             {% else %}
                                 <tr>
-                                    <td colspan="5" class="text-center text-muted">No attendance logs found.</td>
+                                    <td colspan="7" class="text-center text-muted">No attendance logs found.</td>
                                 </tr>
                             {% endif %}
                         </tbody>
